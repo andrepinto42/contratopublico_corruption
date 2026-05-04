@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use log::info;
 use meilisearch_sdk::{client::Client, indexes::Index, task_info::TaskInfo};
 
 use crate::{Contract, SearchableContract};
@@ -8,7 +9,7 @@ use crate::{Contract, SearchableContract};
 pub struct MeilisearchConfig {
     #[clap(long, env, default_value = "http://localhost:7700")]
     pub meilisearch_url: String,
-    #[clap(long, env = "MEILI_MASTER_KEY", default_value = "masterKey")]
+    #[clap(long, env = "MEILI_MASTER_KEY", default_value = "")]
     pub meilisearch_api_key: Option<String>,
 }
 
@@ -30,6 +31,7 @@ type MeilisearchError = meilisearch_sdk::errors::Error;
 
 impl SearchDatabase {
     pub fn new_from_config(config: MeilisearchConfig) -> Result<Self, MeilisearchError> {
+        info!("{}", "runned");
         Ok(Self::new(config.create_client()?))
     }
 

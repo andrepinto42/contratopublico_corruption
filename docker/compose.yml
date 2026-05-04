@@ -4,10 +4,10 @@ services:
   meilisearch:
     restart: unless-stopped
     image: getmeili/meilisearch:v1
-    # ports:
-    # - "7700:7700"
+    ports:
+      - "7700:7700"
     environment:
-      - MEILI_MASTER_KEY
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - MEILI_EXPERIMENTAL_SEARCH_QUEUE_SIZE=3000
       - MEILI_LOG_LEVEL=WARN
       - MEILI_EXPERIMENTAL_DUMPLESS_UPGRADE=true
@@ -17,10 +17,12 @@ services:
   postgres:
     restart: unless-stopped
     image: postgres
+    ports:
+      - "5111:5432"
     environment:
       - POSTGRES_DB=contratopublico
       - POSTGRES_USER=contratopublico
-      - POSTGRES_PASSWORD=contratopublico
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ${DATA_FOLDER}/postgres_data:/var/lib/postgresql
     healthcheck:
@@ -29,27 +31,27 @@ services:
       timeout: 60s
       retries: 5
 
-  backend:
-    restart: unless-stopped
-    depends_on:
-      - meilisearch
-      - postgres
-    build:
-      context: ../backend
-    volumes:
-      - ${DATA_FOLDER}/scraper:/data/scraper
-    environment:
-      - RUST_LOG=info
-      - SAVED_PAGES_PATH=/data/scraper/saved_pages.json
-      - SCRAPER_INTERVAL_SECS=3600 # 60 minutes
-      - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILI_MASTER_KEY
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_USER=contratopublico
-      - POSTGRES_PASSWORD=contratopublico
-      - POSTGRES_DB=contratopublico
-      - BIND_URL=0.0.0.0:3000
+  # backend:
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - meilisearch
+  #     - postgres
+  #   build:
+  #     context: ../backend
+  #   volumes:
+  #     - ${DATA_FOLDER}/scraper:/data/scraper
+  #   environment:
+  #     - RUST_LOG=info
+  #     - SAVED_PAGES_PATH=/data/scraper/saved_pages.json
+  #     - SCRAPER_INTERVAL_SECS=3600 # 60 minutes
+  #     - MEILISEARCH_URL=http://meilisearch:7700
+  #     - MEILI_MASTER_KEY
+  #     - POSTGRES_HOST=postgres
+  #     - POSTGRES_PORT=5111
+  #     - POSTGRES_USER=contratopublico
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+  #     - POSTGRES_DB=contratopublico
+  #     - BIND_URL=0.0.0.0:3000
 
   cli:
     profiles: ["manual"]
@@ -64,60 +66,37 @@ services:
     environment:
       - RUST_LOG=info
       - MEILISEARCH_URL=http://meilisearch:7700
-      - MEILI_MASTER_KEY
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
+      - POSTGRES_PORT=5111
       - POSTGRES_USER=contratopublico
-      - POSTGRES_PASSWORD=contratopublico
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=contratopublico
     entrypoint: ["/usr/local/bin/cli"]
 
-  frontend:
-    restart: unless-stopped
-    depends_on:
-      - backend
-    build:
-      context: ../frontend
-    environment:
-      ORIGIN: https://contratopublico.pt
-      BACKEND_URL: http://backend:3000
+  # frontend:
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - backend
+  #   build:
+  #     context: ../frontend
+  #   environment:
+  #     ORIGIN: https://contratopublico.pt
+  #     BACKEND_URL: http://backend:3000
 
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - ${DATA_FOLDER}/prometheus:/prometheus:rw
-    depends_on:
-      - backend
-    restart: unless-stopped
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=15d"
-
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-    volumes:
-      - ../monitoring/grafana:/etc/grafana/provisioning:ro
-    depends_on:
-      - prometheus
-    restart: unless-stopped
-
-  rpxy:
-    image: jqtype/rpxy:latest
-    restart: unless-stopped
-    # ports:
-    #   - "80:80"
-    #   - "443:443"
-    depends_on:
-      - frontend
-      - backend
-    environment:
-      - LOG_LEVEL=warn
-    volumes:
-      # - ../rpxy/log:/rpxy/log:rw
-      # - ../rpxy/cache:/rpxy/cache:rw
-      # - ../rpxy/acme_registry:/rpxy/acme_registry:rw
-      - ../rpxy/config/config.toml:/etc/rpxy.toml:ro
+  # rpxy:
+  #   image: jqtype/rpxy:latest
+  #   restart: unless-stopped
+  #   # ports:
+  #   #   - "80:80"
+  #   #   - "443:443"
+  #   depends_on:
+  #     - frontend
+  #     - backend
+  #   environment:
+  #     - LOG_LEVEL=warn
+  #   volumes:
+  #     # - ../rpxy/log:/rpxy/log:rw
+  #     # - ../rpxy/cache:/rpxy/cache:rw
+  #     # - ../rpxy/acme_registry:/rpxy/acme_registry:rw
+  #     - ../rpxy/config/config.toml:/etc/rpxy.toml:ro

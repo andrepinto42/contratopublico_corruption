@@ -3,9 +3,9 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::Context;
 use clap::Parser;
 use common::{
-    Contract,
     db::{ContractDatabase, PostgresConfig},
     searchdb::{MeilisearchConfig, SearchDatabase},
+    Contract,
 };
 use log::info;
 use reqwest::Url;
@@ -23,10 +23,17 @@ enum Command {
     Scrape {
         #[command(flatten)]
         postgres_config: PostgresConfig,
+
         #[command(flatten)]
         meilisearch_config: MeilisearchConfig,
-        saved_pages_path: PathBuf,
+
         base_gov_client_proxy: Option<Url>,
+
+        #[arg(long)]
+        start_date: Option<String>,
+
+        #[arg(long)]
+        end_date: Option<String>,
     },
     Fetch {
         contract_id: u64,
@@ -51,23 +58,23 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init_from_env(env);
 
     let args = Args::parse();
-
+    info!("Runned here from cli");
     match args.command {
         Command::Scrape {
-            saved_pages_path,
             base_gov_client_proxy,
             postgres_config,
             meilisearch_config,
+            start_date,
+            end_date,
         } => {
             let search_database = SearchDatabase::new_from_config(meilisearch_config)?;
             let contract_database = ContractDatabase::new_from_config(postgres_config).await?;
 
-            let store =
-                scraper::store::Store::new(search_database, contract_database, saved_pages_path)
-                    .context("Failed to create store")?;
+            let store = scraper::store::Store::new(search_database, contract_database)
+                .context("Failed to create store")?;
 
             let base_gov_client = BaseGovClient::new(base_gov_client_proxy);
-            scraper::scraper::scrape(Arc::new(store), base_gov_client).await;
+            scraper::scraper::scrape(Arc::new(store), base_gov_client, start_date, end_date).await;
         }
         Command::Fetch {
             contract_id,

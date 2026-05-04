@@ -1,5 +1,6 @@
 use anyhow::Context;
 use chrono::NaiveDate;
+use log::info;
 use sqlx::PgPool;
 
 use crate::{Contract, Cpv, Currency, Document, Entity};
@@ -70,11 +71,11 @@ pub struct ContractDatabase {
 pub struct PostgresConfig {
     #[clap(long, env = "POSTGRES_HOST", default_value = "localhost")]
     pub postgres_host: String,
-    #[clap(long, env = "POSTGRES_PORT", default_value = "5432")]
+    #[clap(long, env = "POSTGRES_PORT", default_value = "5111")]
     pub postgres_port: u16,
     #[clap(long, env = "POSTGRES_USER", default_value = "contratopublico")]
     pub postgres_user: String,
-    #[clap(long, env = "POSTGRES_PASSWORD", default_value = "contratopublico")]
+    #[clap(long, env = "POSTGRES_PASSWORD", default_value = "")]
     pub postgres_password: String,
     #[clap(long, env = "POSTGRES_DB", default_value = "contratopublico")]
     pub postgres_db: String,
@@ -82,6 +83,14 @@ pub struct PostgresConfig {
 
 impl ContractDatabase {
     pub async fn new_from_config(config: PostgresConfig) -> anyhow::Result<Self> {
+        info!(
+            "POSTGRES -> host={}, port={}, user={}, db={}, passoword{}",
+            config.postgres_host,
+            config.postgres_port,
+            config.postgres_user,
+            config.postgres_db,
+            config.postgres_password
+        );
         let options = sqlx::postgres::PgConnectOptions::new()
             .host(&config.postgres_host)
             .port(config.postgres_port)
@@ -93,6 +102,12 @@ impl ContractDatabase {
             .await
             .context("Failed to connect to database")?;
 
+        let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM contracts")
+            .fetch_one(&pg_pool)
+            .await
+            .context("Failed to count contracts")?;
+
+        info!("contracts in DB: {}", count.0);
         sqlx::migrate!("../../migrations")
             .run(&pg_pool)
             .await
@@ -125,6 +140,25 @@ impl ContractDatabase {
         .await?;
 
         Ok(ids.into_iter().map(|id| id as u64).collect())
+    }
+    pub async fn contract_exists(&self, id: u64) -> Result<bool, sqlx::Error> {
+        let id_i64 = i64::try_from(id)
+            .map_err(|_| sqlx::Error::Protocol("id out of range for BIGINT".into()))?;
+
+        let exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM contracts
+                WHERE id = $1
+            )
+            "#,
+        )
+        .bind(id_i64)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(exists)
     }
 
     pub async fn get_contract(&self, id: u64) -> Result<Option<Contract>, sqlx::Error> {
@@ -433,7 +467,7 @@ impl ContractDatabase {
 mod tests {
     use sqlx::PgPool;
 
-    use crate::{Contract, Cpv, Currency, Document, Entity, db::ContractDatabase};
+    use crate::{db::ContractDatabase, Contract, Cpv, Currency, Document, Entity};
 
     #[sqlx::test(migrations = "../../migrations")]
     async fn test_db(pg_pool: PgPool) -> sqlx::Result<()> {

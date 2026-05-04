@@ -1,13 +1,16 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use log::info;
 use reqwest::Url;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::base_gov::{BaseGovContract, ContractSearchResponse};
 
 const URL: &str = "https://www.base.gov.pt/Base4/pt/resultados/";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+const TIPO: &str = "1"; // Only search for "Ajustes diretos"
+const PORTUGAL_PAIS_IDENTIFIER: &str = "187";
 
 #[derive(Debug)]
 pub struct ContractSort {
@@ -36,7 +39,7 @@ pub enum BaseGovPayload {
     #[serde(rename = "search_contratos")]
     SearchContracts {
         version: &'static str,
-        query: &'static str,
+        query: String,
         sort: ContractSort,
         page: usize,
         size: usize,
@@ -70,10 +73,18 @@ impl BaseGovClient {
         sort: ContractSort,
         page: usize,
         size: usize,
+        start_date: &Option<String>,
+        end_date: &Option<String>,
     ) -> anyhow::Result<ContractSearchResponse> {
+        let start_date_formated = start_date.as_deref().unwrap_or("");
+        let end_date_formated = end_date.as_deref().unwrap_or("");
+
+        let query_fetch = format!(
+            "tipo={TIPO}&tipocontrato=0&desdedatapublicacao={start_date_formated}&atedatapublicacao={end_date_formated}&pais={PORTUGAL_PAIS_IDENTIFIER}&distrito=4&concelho=0");
+        info!("{}", query_fetch);
         let payload = BaseGovPayload::SearchContracts {
             version: "140.0",
-            query: "tipo=0&tipocontrato=0&pais=0&distrito=0&concelho=0",
+            query: query_fetch,
             sort,
             page,
             size,

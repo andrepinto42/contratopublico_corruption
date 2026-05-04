@@ -392,6 +392,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "log",
  "meilisearch-sdk",
  "serde",
  "sqlx",

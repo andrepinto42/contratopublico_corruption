@@ -7,7 +7,7 @@ use crate::{
     store::Store,
 };
 use governor::Quota;
-use log::{error, info, warn};
+use log::{error, info};
 use std::{num::NonZeroU32, sync::Arc};
 use tokio::task::JoinHandle;
 
@@ -23,7 +23,12 @@ const MAX_CONSECUTIVE_FAILURES: usize = 3;
 const MAX_CONCURRENT_REQUESTS: usize = 5;
 const MAX_REQUEST_QUOTA: Quota = Quota::per_second(NonZeroU32::new(5).unwrap());
 
-pub async fn scrape(store: Arc<Store>, base_gov_client: BaseGovClient) {
+pub async fn scrape(
+    store: Arc<Store>,
+    base_gov_client: BaseGovClient,
+    start_date: Option<String>,
+    end_date: Option<String>,
+) {
     let client = Arc::new(base_gov_client);
     let throttler = Arc::new(Throttler::new(MAX_CONCURRENT_REQUESTS, MAX_REQUEST_QUOTA));
 
@@ -32,11 +37,13 @@ pub async fn scrape(store: Arc<Store>, base_gov_client: BaseGovClient) {
 
     let fetch_task = run_fetch_ids_task(
         client.clone(),
-        store.clone(),
         throttler.clone(),
         exit_tx,
         id_tx.clone(),
+        start_date,
+        end_date,
     );
+
     let details_task = run_fetch_details_task(client, store, throttler, exit_rx, id_tx, id_rx);
 
     tokio::join!(fetch_task, details_task);
@@ -50,27 +57,34 @@ struct ContractLocation {
 
 async fn run_fetch_ids_task(
     client: Arc<BaseGovClient>,
-    store: Arc<Store>,
     throttler: Arc<Throttler>,
     exit_tx: tokio::sync::oneshot::Sender<()>,
     id_tx: tokio::sync::mpsc::Sender<ContractLocation>,
+    start_date: Option<String>,
+    end_date: Option<String>,
 ) {
     let mut total_pages = None;
     let mut consecutive_failures = 0_usize;
     let mut current_page = 0_usize;
 
     loop {
-        let should_continue = match total_pages {
-            Some(total_pages) => current_page < total_pages,
-            None => consecutive_failures < MAX_CONSECUTIVE_FAILURES,
-        };
-
-        if !should_continue {
-            error!("Couldn't fetch IDs for over {MAX_CONSECUTIVE_FAILURES} consecutive times");
+        if let Some(total_pages) = total_pages {
+            if current_page >= total_pages {
+                info!(
+                    "Finished fetching all pages (current_page={} total_pages={})",
+                    current_page, total_pages
+                );
+                break;
+            }
+        } else if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+            error!(
+                "Stopping after {} consecutive failures (last_page_attempted={})",
+                consecutive_failures, current_page
+            );
             break;
         }
 
-        current_page = store.get_next_page_to_query(current_page);
+        // current_page = store.get_next_page_to_query(current_page);
 
         let total_pages_str = total_pages
             .map(|s| s.to_string())
@@ -80,7 +94,13 @@ async fn run_fetch_ids_task(
 
         let _ = throttler.throttle();
         let response = client
-            .fetch_page(CONTRACT_SORT_ORDER, current_page, MAX_PAGE_SIZE)
+            .fetch_page(
+                CONTRACT_SORT_ORDER,
+                current_page,
+                MAX_PAGE_SIZE,
+                &start_date,
+                &end_date,
+            )
             .await;
 
         let response = match response {
@@ -132,7 +152,6 @@ async fn run_fetch_details_task(
     mut id_rx: tokio::sync::mpsc::Receiver<ContractLocation>,
 ) {
     let mut handles: Vec<JoinHandle<()>> = Vec::new();
-
     loop {
         let ContractLocation { id, page, retries } = tokio::select! {
             biased;
@@ -144,16 +163,20 @@ async fn run_fetch_details_task(
             }
         };
 
-        if store.already_exists(id, page).await {
-            warn!("Contract {id} already exists, skipping...");
+        let store = Arc::clone(&store);
+        if store.contract_exists(id).await {
             continue;
         }
+
+        // if store.already_exists(id, page).await {
+        //     warn!("Contract {id} already exists, skipping...");
+        //     continue;
+        // }
 
         handles.retain(|task| !task.is_finished());
 
         let permit = throttler.throttle().await;
         let client = Arc::clone(&client);
-        let store = Arc::clone(&store);
         let id_tx = id_tx.clone();
 
         let handle = tokio::spawn(async move {
@@ -185,13 +208,8 @@ async fn run_fetch_details_task(
             };
 
             let contract = contract.into();
-            info!("Fetched details for contract {id}");
-
-            if let Err(e) = store
-                .save_scraped_contract(contract, page, MAX_PAGE_SIZE)
-                .await
-            {
-                error!("Failed to save details for ID {id}:\n{:?}", e);
+            if store.save_contract(contract).await.is_ok() {
+                info!("Saved contract {id}");
             }
         });
 

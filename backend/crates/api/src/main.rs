@@ -9,7 +9,7 @@ use reqwest::Url;
 use scraper::{base_gov::client::BaseGovClient, store::Store};
 use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::signal;
-use tracing::{Level, event, info};
+use tracing::{event, info, Level};
 
 mod error;
 mod extractors;
@@ -39,6 +39,10 @@ struct Args {
     no_scraper: bool,
     #[clap(long, env)]
     base_gov_client_proxy: Option<Url>,
+    #[clap(long)]
+    start_date: Option<String>,
+    #[clap(long)]
+    end_date: Option<String>,
 }
 
 #[tokio::main]
@@ -58,54 +62,61 @@ async fn main() -> anyhow::Result<()> {
         )
         .context("Failed to create scraper store")?,
     );
+    info!("Runned here from main");
+    Ok(())
+    // let app_state = AppState::new(search_database, contract_database);
+    // app_state
+    //     .prepare_settings()
+    //     .await
+    //     .context("Failed to prepare indexes")?;
 
-    let app_state = AppState::new(search_database, contract_database);
-    app_state
-        .prepare_settings()
-        .await
-        .context("Failed to prepare indexes")?;
+    // if !args.no_scraper {
+    //     tokio::spawn(async move {
+    //         loop {
+    //             let base_gov_client = BaseGovClient::new(args.base_gov_client_proxy.clone());
+    //             scraper::scraper::scrape(
+    //                 scraper_store.clone(),
+    //                 base_gov_client,
+    //                 args.start_date.clone(),
+    //                 args.end_date.clone(),
+    //             )
+    //             .await;
+    //             tokio::time::sleep(tokio::time::Duration::from_secs(args.scraper_interval_secs))
+    //                 .await;
+    //         }
+    //     });
+    // }
 
-    if !args.no_scraper {
-        tokio::spawn(async move {
-            loop {
-                let base_gov_client = BaseGovClient::new(args.base_gov_client_proxy.clone());
-                scraper::scraper::scrape(scraper_store.clone(), base_gov_client).await;
-                tokio::time::sleep(tokio::time::Duration::from_secs(args.scraper_interval_secs))
-                    .await;
-            }
-        });
-    }
+    // tokio::spawn(statistics::run_reload_statistics_task(app_state.clone()));
 
-    tokio::spawn(statistics::run_reload_statistics_task(app_state.clone()));
+    // let backend_router =
+    //     router::router(app_state).into_make_service_with_connect_info::<SocketAddr>();
 
-    let backend_router =
-        router::router(app_state).into_make_service_with_connect_info::<SocketAddr>();
+    // let backend_listener = tokio::net::TcpListener::bind(args.bind_url)
+    //     .await
+    //     .context("Failed to bind backend listener")?;
 
-    let backend_listener = tokio::net::TcpListener::bind(args.bind_url)
-        .await
-        .context("Failed to bind backend listener")?;
+    // let backend_ip = backend_listener.local_addr().unwrap();
+    // event!(Level::INFO, "Backend listening on {backend_ip}");
 
-    let backend_ip = backend_listener.local_addr().unwrap();
-    event!(Level::INFO, "Backend listening on {backend_ip}");
+    // let metrics_router = metrics::metrics_router()?;
 
-    let metrics_router = metrics::metrics_router()?;
+    // let metrics_listener = tokio::net::TcpListener::bind(args.metrics_bind_url)
+    //     .await
+    //     .context("Failed to bind metrics listener")?;
 
-    let metrics_listener = tokio::net::TcpListener::bind(args.metrics_bind_url)
-        .await
-        .context("Failed to bind metrics listener")?;
+    // let metrics_ip = metrics_listener.local_addr().unwrap();
+    // event!(Level::INFO, "Metrics listening on {metrics_ip}");
 
-    let metrics_ip = metrics_listener.local_addr().unwrap();
-    event!(Level::INFO, "Metrics listening on {metrics_ip}");
+    // let (metrics_task, backend_task) = tokio::join!(
+    //     axum::serve(metrics_listener, metrics_router)
+    //         .with_graceful_shutdown(shutdown_signal("metrics")),
+    //     axum::serve(backend_listener, backend_router)
+    //         .with_graceful_shutdown(shutdown_signal("backend")),
+    // );
 
-    let (metrics_task, backend_task) = tokio::join!(
-        axum::serve(metrics_listener, metrics_router)
-            .with_graceful_shutdown(shutdown_signal("metrics")),
-        axum::serve(backend_listener, backend_router)
-            .with_graceful_shutdown(shutdown_signal("backend")),
-    );
-
-    metrics_task.context("Failed to serve metrics")?;
-    backend_task.context("Failed to serve backend")
+    // metrics_task.context("Failed to serve metrics")?;
+    // backend_task.context("Failed to serve backend")
 }
 
 async fn shutdown_signal(target: &str) {
